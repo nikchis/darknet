@@ -23,7 +23,13 @@ int check_mistakes = 0;
 
 static int coco_ids[] = { 1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,31,32,33,34,35,36,37,38,39,40,41,42,43,44,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,67,70,72,73,74,75,76,77,78,79,80,81,82,84,85,86,87,88,89,90 };
 
-void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int dont_show, int calc_map, int mjpeg_port, int show_imgs, int benchmark_layers, char* chart_path)
+void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int dont_show, int calc_map, int mjpeg_port, int show_imgs, int benchmark_layers, char* chart_path) {
+    AtomicInt sigterm = 0;
+    train_detector_with_sigterm(datacfg, cfgfile, weightfile, gpus, ngpus, clear, dont_show, 
+        calc_map, mjpeg_port, show_imgs, benchmark_layers, chart_path, &sigterm);
+}
+
+void train_detector_with_sigterm(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int dont_show, int calc_map, int mjpeg_port, int show_imgs, int benchmark_layers, char* chart_path, AtomicInt* sigterm)
 {
     list *options = read_data_cfg(datacfg);
     char *train_images = option_find_str(options, "train", "data/train.txt");
@@ -59,6 +65,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
         }
         free_ptrs((void**)names, net_map.layers[net_map.n - 1].classes);
     }
+    if(*sigterm) return;
 
     srand(time(0));
     char *base = basecfg(cfgfile);
@@ -184,6 +191,15 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
         printf("\n Tracking! batch = %d, subdiv = %d, time_steps = %d, mini_batch = %d \n", net.batch, net.subdivisions, net.time_steps, args.mini_batch);
     }
     //printf(" imgs = %d \n", imgs);
+    if(*sigterm) {
+        // TODO: freemem
+#ifdef OPENCV
+        release_mat(&img);
+        destroy_all_windows_cv();
+#endif
+        return;
+    }
+
 
     pthread_t load_thread = load_data(args);
 
@@ -248,6 +264,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
         }
         double time = what_time_is_it_now();
         pthread_join(load_thread, 0);
+
         train = buffer;
         if (net.track) {
             net.sequential_subdivisions = get_current_seq_subdivisions(net);
@@ -278,7 +295,14 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
         printf("Loaded: %lf seconds", load_time);
         if (load_time > 0.1 && avg_loss > 0) printf(" - performance bottleneck on CPU or Disk HDD/SSD");
         printf("\n");
-
+        if(*sigterm) {
+        // TODO: freemem
+#ifdef OPENCV
+            release_mat(&img);
+            destroy_all_windows_cv();
+#endif
+            return;
+        }
         time = what_time_is_it_now();
         float loss = 0;
 #ifdef GPU
@@ -410,6 +434,35 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
             }
         }
         free_data(train);
+        if (*sigterm) {
+#ifdef OPENCV
+            release_mat(&img);
+            destroy_all_windows_cv();
+#endif
+            // free memory
+            pthread_join(load_thread, 0);
+            free_data(buffer);
+        
+            free_load_threads(&args);
+        
+            free(base);
+            free(paths);
+            free_list_contents(plist);
+            free_list(plist);
+        
+            free_list_contents_kvp(options);
+            free_list(options);
+        
+            for (k = 0; k < ngpus; ++k) free_network(nets[k]);
+            free(nets);
+            //free_network(net);
+        
+            if (calc_map) {
+                net_map.n = 0;
+                free_network(net_map);
+            }
+            return;
+        }
     }
 #ifdef GPU
     if (ngpus != 1) sync_nets(nets, ngpus, 0);
