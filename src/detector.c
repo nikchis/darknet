@@ -26,10 +26,10 @@ static int coco_ids[] = { 1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,
 void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int dont_show, int calc_map, int mjpeg_port, int show_imgs, int benchmark_layers, char* chart_path) {
     AtomicInt sigterm = 0;
     train_detector_with_sigterm(datacfg, cfgfile, weightfile, gpus, ngpus, clear, dont_show, 
-        calc_map, mjpeg_port, show_imgs, benchmark_layers, chart_path, &sigterm);
+        calc_map, mjpeg_port, show_imgs, benchmark_layers, NULL, chart_path, &sigterm);
 }
 
-void train_detector_with_sigterm(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int dont_show, int calc_map, int mjpeg_port, int show_imgs, int benchmark_layers, char* chart_path, AtomicInt* sigterm)
+void train_detector_with_sigterm(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int dont_show, int calc_map, int mjpeg_port, int show_imgs, int benchmark_layers, char* imgfile, char* chart_path, AtomicInt* sigterm)
 {
     list *options = read_data_cfg(datacfg);
     char *train_images = option_find_str(options, "train", "data/train.txt");
@@ -177,8 +177,12 @@ void train_detector_with_sigterm(char *datacfg, char *cfgfile, char *weightfile,
     float max_img_loss = net.max_chart_loss;
     int number_of_lines = 100;
     int img_size = 1000;
-    char windows_name[100];
-    sprintf(windows_name, "chart_%s.png", base);
+    char windows_name[2048];
+    if (imgfile) {
+        snprintf(windows_name, 2048, "%s", imgfile);
+    } else {
+        snprintf(windows_name, 2048, "chart_%s.png", base);
+    }
     img = draw_train_chart(windows_name, max_img_loss, net.max_batches, number_of_lines, img_size, dont_show, chart_path);
 #endif    //OPENCV
     if (net.contrastive && args.threads > net.batch/2) args.threads = net.batch / 2;
