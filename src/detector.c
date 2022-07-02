@@ -42,6 +42,9 @@ void train_detector_with_sigterm(char* datacfg, char* cfgfile, char* weightfile,
 	char* valid_images     = option_find_str(options, "valid", train_images);
 	char* backup_directory = option_find_str(options, "backup", "/backup/");
 
+	char chart_log_path[256];
+	sprintf(chart_log_path, "%s/chart.log", backup_directory);
+
 	network net_map;
 	if (calc_map) {
 		FILE* valid_file = fopen(valid_images, "r");
@@ -458,14 +461,15 @@ void train_detector_with_sigterm(char* datacfg, char* cfgfile, char* weightfile,
 
 		// Dump training metadata
 		if ((iteration > 0) && (iteration % 10 == 0)) {
-			char chart_log_path[256];
-			sprintf(chart_log_path, "%s/chart.log", backup_directory);
 			FILE* fp = fopen(chart_log_path, "a");
 			if (fp) {
 				fprintf(fp, "{");
-				fprintf(fp, "\"iteration\":%d,", iteration);
+				fprintf(fp, "\"iter\":%d,", iteration);
+				fprintf(fp, "\"loss\":%.4f,", loss);
 				fprintf(fp, "\"avg_loss\":%.4f,", avg_loss);
-				fprintf(fp, "\"mean_avg_precision\":%.4f", mean_average_precision);
+				fprintf(fp, "\"rate\":%.6f,", get_current_rate(net));
+				fprintf(fp, "\"images\":%d,", iteration * imgs);
+				fprintf(fp, "\"hr_left\":%.4f", avg_time);
 				fprintf(fp, "}\n");
 				fclose(fp);
 			}
